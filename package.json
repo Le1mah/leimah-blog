@@ -42,7 +42,7 @@
     "vite-tsconfig-paths": "^4.2.1",
     "wrangler": "^3.0.0"
   },
-  "dependencies": {
+  "optionalDependencies": {
     "sharp": "^0.33.1"
   }
 }
