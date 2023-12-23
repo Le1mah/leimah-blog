@@ -43,6 +43,6 @@
     "wrangler": "^3.0.0"
   },
   "optionalDependencies": {
-    "sharp": "^0.33.1"
+    "@img/sharp-linux-x64": "^0.33.0"    
   }
 }
