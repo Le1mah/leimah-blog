@@ -1,13 +1,12 @@
 import { component$ } from "@builder.io/qwik";
 import type { DocumentHead } from "@builder.io/qwik-city";
+import styles from "./index.module.css";
 
 export default component$(() => {
   return (
     <>
-      <h1>Welcome to Leimah's Blog</h1>
-
-      <div>
-        <h2>Blog list:</h2>
+      <div class={[styles.posts, "container"]}>
+        <h2>Latest posts:</h2>
 
         <ul>
           <li>
@@ -23,11 +22,11 @@ export default component$(() => {
 });
 
 export const head: DocumentHead = {
-  title: "Welcome to Qwik",
+  title: "Leimah's Himitsu Kichi",
   meta: [
     {
       name: "description",
-      content: "Qwik site description",
+      content: "Blog of Leimah. Hoarded my thoughts.",
     },
   ],
 };
