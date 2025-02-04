@@ -1,0 +1,139 @@
+import imgChunked from './curl-chunked.png';
+import imgeContentLength from './curl-content-length.png'
+
+事情大概是这样的。
+
+在年前临上线时，前端和容器都做了很大的改动。果不其然地，生产就出现了一堆小毛病。其中比较恼人的，是一个预览器没法成功加载了——进度条卡在了 0，而实际上请求早已经完成。
+
+时间紧急，我所做的第一件事，便是打好断点去重现错误。简单说，是因为 Content-Length  的头没有成功解析，变成了 NaN，招致了后一步 `Uint8Array` set value 越界。
+
+本以为是大小写的问题，可试了几个大小写组合，压根没有 Content-Length 这个头。Postman 也因为文件太大直接宕机，没法查看具体的 header ……
+
+途中尝试用了 HEAD method，只是当时没敢确认，所以又找了 Powershell 的命令做类似于 curl -v 的操作。
+
+```powershell
+Invoke-WebRequest -Uri xxx -SkipCertficateCheck
+```
+
+`-SkipCertficateCheck` 是 Powershell v7 的新参数，和 curl -k 同理，忽略 VPN 的自签证书。
+（事后想想，明明有 wsl，直接 curl 更方便，还省得装一份 PS v7）
+
+当然，它和 curl 有一点点小的不同—— `Invoke-WebRequest` 返回的是 Response 对象，也许在某些特殊情况下方便一点……
+
+之后运维提议将文件从容器中挪到对象存储里。用同样的方式测试了一下，这次确实可以拿到 Content-Length。于是乎简单地加了一些变量重新指定这些文件的路径后，问题得到解决——大家皆大欢喜，可以过一个好年了。
+
+## 为什么 Content-Length 不见了
+
+尝试着用同样的生产命令跑了一下，本地还是可以取到 Content-Length 的。
+那应当就是 NGINX 或者是容器的一层做了转换，将这种大文件转换成了 Transfer-Encoding: chunked, 以便进行分片传输。但是在这种情况下，Content-Length 是[必须被忽略的](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding#chunked)。
+
+如果标注了 Content-Length，则可以判断当前的进度。Transfer-Encoding: chunked 则丧失了这一优势。
+
+试着写了一个服务器来测试 Content-Length 和 chunked 的区别，在 PowerShell 7 的 Invoke-WebRequest 中格外明显：
+
+> `slow` 使用了 Content-Length，可以看到进度条会根据数据的传输慢慢变化。
+
+{/* ![ContentLength](/blog/2025/02/content-length-and-chunked/curl-content-length.png) */}
+<img src={imgeContentLength} alt="PowerShell Screenshot fetching with Content-Length" />
+
+> `chunked` 使用了  Transfer-Encoding: chunked，则只能看到当前已经下载的数据量，而无法判断已经下载了
+
+{/* ![Chunked](/blog/2025/02/content-length-and-chunked/curl-chunked.png) */}
+<img src={imgChunked} alt="PowerShell Screenshot fetching with Transfer-Encoding: chunked" />
+
+我们偶尔在下载文件时也会遇到 Chrome UI 无法显示文件总大小，我猜测和这两个头也有一定关系。只是不太好复现，之后有空再捣鼓一下。
+
+似乎 Request 同样可以做成类似的分片传输。甚至双工的机制也在推进中。之后有机会尝试一下。
+
+此外，我还观察到 Chrome devtools 的一个比较有趣的机制：每个请求所消耗的时间只会在接收到新的数据后才更新。
+这个服务器每 5 秒传输新的一部分数据，因此消耗的时间会在下一个时点前保持原状（如 13s），再在下一个数据块到达后更新（变成 18s）。
+
+尽管还没搞清楚是哪一层将 Content-Length 转换成了 Transfer-Encoding: chunked。但是在这个过程中发现了一些自己曾经疑惑，却只是 assume 而没有深究的点。
+以下会一一列出。
+
+## fetch() 与 response.json() 的 Promise
+
+fetch 应该是现代 JS 开发，尤其是网页应用程序里面不可避免的一个 API 了。大家都知道，它的返回值是一个 Promise\<Response>, 之后我们将它的 resolve 时间称为 fetch() resolve 的时间。
+
+只是这个 Promise resolve 的时间点是什么时候呢？早先的我，总是以为它发生在整个 response 被全部接收之后。
+
+至于你说 `response.json()`为什么也返回了 Promise? 我一度以为是 JSON 的解析器，或是别的什么部件需要异步……
+
+```ts
+const response = await fetch('xxx');
+const { data } = await response.json();
+//                      ^ 尤其是这里的 json 为何要返回一个 promise, 一直抱着得过且过的态度
+```
+
+其实 MDN 上也没有好好解释关于这两个 Promise 的底层逻辑……
+
+但是在读项目代码时，能明显看到 fetch resolve 之后是没完全接收到请求体的。不然我们也不用如此大费周章去用 reader 读取内容。
+
+```ts
+const req = await fetch(url, {
+	mode: "cors",
+	credentials: "omit",
+	cache: useCache ? "force-cache" : "default",
+});
+
+if (req.status != 200) {
+	throw new Error(req.status + " Unable to load " + req.url);
+}
+
+const reader = req.body!.getReader();
+const contentLength = parseInt(req.headers.get("content-length") as string);
+const data = new Uint8Array(contentLength);
+
+while (true) {
+	const { done, value } = await reader.read();
+	if (done) break;
+	bytesRead += value.length;
+	onProgress?.(bytesRead / contentLength);
+}
+```
+
+> 说来惭愧，之前和别人聊到 fetch API 的不足时，总会说 fetch 对于大文件下载没法计量下载的百分比。
+> 这段代码看来完全是可以实现的。
+> 着实是半桶水晃荡。（不过还没研究过上传的情况，可以作为一个新话题研究一下）。
+
+回到话题上来。
+要想知道 fetch resolve 的时机，首先需要看一下 [HTTP 响应的结构](https://zh.wikipedia.org/wiki/HTTP%E6%8A%A5%E6%96%87%E4%B8%BB%E4%BD%93)：
+
+```
+HTTP/1.1 200 OK
+Date: Sun, 10 Oct 2010 23:26:07 GMT
+Server: Apache/2.2.8 (Ubuntu) mod_ssl/2.2.8 OpenSSL/0.9.8g
+Last-Modified: Sun, 26 Sep 2010 22:04:35 GMT
+ETag: "45b6-834-49130cc1182c0"
+Accept-Ranges: bytes
+Content-Length: 13
+Connection: close
+Content-Type: text/html
+
+Hello world!
+```
+
+可以看到，第一行是状态码，第二行开始则是 HTTP 头。
+头的部分以两个 \r\n, 即两个 CRLF 结尾。
+
+当 fetch 收到两个 \r\n 之后，就会构建好 Response 并 resolve. 
+
+但是此时的 Response 还没有接收到完整的 body，也就是为什么 response 的一系列方法都返回了 Promise。
+如果想要实时地获取，就可以像上面一样手动 getReader 去读取了。
+
+response.json() 的也是同样，它会先等待整个响应体结束，然后再进行 JSON 的解析。因此，就算第一个字符就已经违反了 JSON 的语法，它还是会等到整个 response body 结束后再 reject。
+
+
+## Workaround
+
+尽管还没搞懂问题所在。但是在此我们先做一些预防来针对这几种情况：
+
+1. 这一部分机制是和进度条相关，因此没有收到 Content-Length 时，我们隐藏掉进度条即可。
+2. 选用一个有 Content-Length 的静态文件服务，也是现在选择的解决方案。
+3. 检查中间件的状态，保证 Content-Length 不再被转换为 Transfer-Encoding: chunked。
+4. 在服务端添加自定义 header，让前端也可以估算进度。
+
+还有一些遗留的问题，之后有精力再捣鼓吧。
+出了学校就没有写过这么长的东西，逻辑也十分混乱，感谢大家的理解。
+也欢迎互相交流 :3 
+
