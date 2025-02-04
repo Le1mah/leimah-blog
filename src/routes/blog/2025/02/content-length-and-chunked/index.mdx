@@ -1,6 +1,8 @@
 import imgChunked from './curl-chunked.png';
 import imgeContentLength from './curl-content-length.png'
 
+# Content-Length 以及 Transfer-Encoding: chunked 引发的一些 Bug
+
 事情大概是这样的。
 
 在年前临上线时，前端和容器都做了很大的改动。果不其然地，生产就出现了一堆小毛病。其中比较恼人的，是一个预览器没法成功加载了——进度条卡在了 0，而实际上请求早已经完成。
