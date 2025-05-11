@@ -17,12 +17,18 @@ html {
     "Segoe UI Emoji",
     "Segoe UI Symbol",
     "Noto Color Emoji";
+
+  min-height: 100%;
 }
 
 body {
   background: var(--qwik-dark-background);
   color: var(--qwik-dark-text);
   overflow-x: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 /* HEADINGS ------------------------------------- */
@@ -215,5 +221,5 @@ button.button-small {
 
 main {
   max-width: 800px;
-  margin: auto;
+  flex: 1;
 }

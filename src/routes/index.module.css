@@ -1,0 +1,13 @@
+.posts {
+    margin-top: 2rem;
+}
+
+.posts h2 {
+    margin-bottom: 12px;
+}
+
+.posts ul {
+    list-style: none;
+    padding: 0;
+    line-height: 1.5;
+}

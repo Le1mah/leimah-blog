@@ -1,5 +1,6 @@
 import { component$ } from "@builder.io/qwik";
 import type { DocumentHead } from "@builder.io/qwik-city";
+import styles from "./index.module.css";
 
 export default component$(() => {
   const articles = [{
@@ -7,16 +8,18 @@ export default component$(() => {
     date: "2024-02-28",
     slug: "2024/02/review-of-review",
   }, {
+    title: "Content-Length 以及 Transfer-Encoding: chunked 引发的一些 Bug",
+    date: "2025-02-04",
+    slug: "2025/02/content-length-and-chunked",
+  }, {
     title: "Say Something",
     date: "2025-05-12",
     slug: "2025/01/say-something",
   }]
   return (
     <>
-      <h1>Welcome to Leimah's Blog</h1>
-
-      <div>
-        <h2>Blog list:</h2>
+      <div class={[styles.posts, "container"]}>
+        <h2>Latest posts:</h2>
 
         <ul>
           {articles.map((article) => (
@@ -33,11 +36,11 @@ export default component$(() => {
 });
 
 export const head: DocumentHead = {
-  title: "Welcome to Qwik",
+  title: "Leimah's Himitsu Kichi",
   meta: [
     {
       name: "description",
-      content: "Qwik site description",
+      content: "Blog of Leimah. Hoarded my thoughts.",
     },
   ],
 };
